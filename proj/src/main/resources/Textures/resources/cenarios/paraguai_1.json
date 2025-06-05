@@ -1,0 +1,9 @@
+{
+  "nome": "Região Oriental",
+  "dimensoes": {"largura": 20, "altura": 20},
+  "recursos": [
+    {"tipo": "mate", "quantidade": 5},
+    {"tipo": "soja", "quantidade": 3},
+    {"tipo": "madeira", "quantidade": 4}
+  ]
+}

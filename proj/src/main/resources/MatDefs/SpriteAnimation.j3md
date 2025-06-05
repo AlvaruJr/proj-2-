@@ -1,0 +1,18 @@
+MaterialDef SpriteAnimation {
+
+    MaterialParameters {
+        Texture2D ColorMap
+        Int SpriteCols
+        Int SpriteRows
+        Vector2 Offset
+        Vector2 Scale
+    }
+
+    Technique {
+        VertexShader GLSL100:   Common/MatDefs/Misc/Unshaded.vert
+        FragmentShader GLSL100:  MatDefs/SpriteAnimation.frag
+        WorldParameters {
+            WorldViewProjectionMatrix
+        }
+    }
+}

@@ -1,0 +1,116 @@
+plugins {
+    id 'application'
+    id 'java'
+    id 'idea'
+    id "com.github.johnrengelman.shadow" version "7.1.2"
+    id "de.undercouch.download" version "5.1.0"
+}
+
+description = 'Simulação NetLogo Paraguai - Guaranis vs Jesuítas'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
+
+application {
+    mainClass = 'netlogoparaguay.Main'
+
+    if (System.getProperty("os.name").toLowerCase().contains("mac")) {
+        applicationDefaultJvmArgs = ['-XstartOnFirstThread']
+    }
+}
+
+ext {
+    jmeVersion = '3.6.1-stable' // Versão estável recomendada
+    log4jVersion = '2.20.0'
+    dyn4jVersion = '4.2.0'
+}
+
+repositories {
+    mavenCentral()
+    maven { url 'https://repo.jmonkeyengine.org/' }
+    maven { url 'https://jitpack.io' }
+}
+
+dependencies {
+    // Core JMonkeyEngine
+    implementation "org.jmonkeyengine:jme3-core:$jmeVersion"
+    implementation "org.jmonkeyengine:jme3-desktop:$jmeVersion"
+    implementation "org.jmonkeyengine:jme3-lwjgl3:$jmeVersion"
+
+    // Física 2D
+    implementation "org.dyn4j:dyn4j:$dyn4jVersion"
+
+    // GUI básica (removido Lemur para simplificar)
+    implementation "org.jmonkeyengine:jme3-niftygui:$jmeVersion"
+
+    // Logging
+    implementation "org.apache.logging.log4j:log4j-core:$log4jVersion"
+    implementation "org.apache.logging.log4j:log4j-api:$log4jVersion"
+
+    implementation "org.jmonkeyengine:jme3-core:3.6.1-stable"
+    implementation "org.jmonkeyengine:jme3-desktop:3.6.1-stable"
+    implementation "org.jmonkeyengine:jme3-lwjgl3:3.6.1-stable"
+}
+
+shadowJar {
+    minimize()
+    archiveFileName = "NetlogoParaguay.jar"
+
+    exclude 'META-INF/*.SF'
+    exclude 'META-INF/*.DSA'
+    exclude 'META-INF/*.RSA'
+
+    mergeServiceFiles()
+}
+
+sourceSets {
+    main {
+        resources {
+            srcDirs = ["src/main/resources", "assets"]
+            excludes = ["**/*.blend", "**/*.ma", "**/*.fbx"]
+        }
+    }
+}
+
+// Configuração de distribuição para Windows
+tasks.register('prepareWindowsDistribution', Copy) {
+    from shadowJar
+    into layout.buildDirectory.dir('dist/windows')
+}
+
+def jreUrl = "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.8%2B7/OpenJDK17U-jre_x64_windows_hotspot_17.0.8_7.zip"
+
+tasks.register('downloadWindowsJRE', Download) {
+    src jreUrl
+    dest layout.buildDirectory.file('jre/windows-jre.zip')
+    overwrite false
+}
+
+tasks.register('unpackWindowsJRE', Copy) {
+    dependsOn downloadWindowsJRE
+    from zipTree(downloadWindowsJRE.dest)
+    into layout.buildDirectory.dir('jre/windows')
+    eachFile { f ->
+        f.path = f.path.replaceAll('^[^/]+/', '')
+    }
+    includeEmptyDirs = false
+}
+
+tasks.register('createWindowsDistribution', Zip) {
+    dependsOn shadowJar, unpackWindowsJRE
+    archiveFileName = "NetlogoParaguay-windows.zip"
+    destinationDirectory = layout.buildDirectory.dir('distributions')
+
+    from prepareWindowsDistribution
+    from layout.buildDirectory.dir('jre/windows')
+    from file('scripts/desktopDeployment/Netlogoparaguay.bat')
+
+    into 'NetlogoParaguay'
+}
+
+clean {
+    delete fileTree(dir: '.', includes: ['*.dll', '*.dylib', '*.so', 'hs_err_pid*.log'])
+}
