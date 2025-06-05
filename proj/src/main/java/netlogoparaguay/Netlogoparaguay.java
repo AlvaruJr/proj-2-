@@ -1,86 +1,121 @@
 package netlogoparaguay;
 
 import com.jme3.app.SimpleApplication;
+import com.jme3.input.MouseInput;
+import com.jme3.input.controls.ActionListener;
+import com.jme3.input.controls.MouseButtonTrigger;
 import com.jme3.light.AmbientLight;
 import com.jme3.light.DirectionalLight;
 import com.jme3.math.ColorRGBA;
+import com.jme3.math.Vector2f;
 import com.jme3.math.Vector3f;
+import com.jme3.scene.Node;
+import com.jme3.scene.Spatial;
 import com.jme3.system.AppSettings;
 
-// Imports para UI
-import netlogoparaguay.simulation.SimulationAppState; // O estado que a UI usa (singular)
-import netlogoparaguay.simulation.SimulationAppStates; // O motor da simulação (plural)
-import netlogoparaguay.ControlPanel; // Assumindo que a classe é ControlPanel com 'C' maiúsculo
-import netlogoparaguay.agents.Controls.Panel.StatsPanel; // Corrigindo o caminho se necessário
+import netlogoparaguay.simulation.SimulationAppState;
+import netlogoparaguay.simulation.SimulationAppStates;
+import netlogoparaguay.agents.Controls.controller.ControlPanel;
+import netlogoparaguay.agents.Controls.Panel.Button;
+import netlogoparaguay.agents.Controls.Panel.StatsPanel;
 import netlogoparaguay.agents.Controls.Panel.StatsUpdater;
 
-public class Netlogoparaguay extends SimpleApplication {
+public class Netlogoparaguay extends SimpleApplication implements ActionListener {
 
-    private SimulationAppState uiAppState; // Estado para a UI
-    private SimulationAppStates simulationEngine; // Motor da simulação
+    private SimulationAppState uiAppState;
+    private SimulationAppStates simulationEngine;
+    public static final String MAPPING_UI_CLICK = "UIClick";
 
     public static void main(String[] args) {
         Netlogoparaguay app = new Netlogoparaguay();
-
         AppSettings settings = new AppSettings(true);
-        settings.setTitle("Simulação Guaranis vs Jesuítas - 3D Interativa");
+        settings.setTitle("Simulação NetLogo Paraguai");
         settings.setResolution(1280, 720);
         settings.setSamples(4);
         app.setSettings(settings);
         app.setShowSettings(false);
-
         app.start();
     }
 
     @Override
     public void simpleInitApp() {
-        // Configuração da Câmera 3D e Iluminação (como na resposta anterior)
-        flyCam.setEnabled(true);
-        flyCam.setMoveSpeed(25f);
-        flyCam.setDragToRotate(true);
-        cam.setLocation(new Vector3f(0f, 0f, 35f));
+        if (flyCam != null) {
+            flyCam.setDragToRotate(false);
+            flyCam.setEnabled(false);
+            System.out.println("FlyCam desabilitada (cursor visível).");
+        }
+        inputManager.setCursorVisible(true);
+
+        cam.setLocation(new Vector3f(0f, 0f, 45f));
         cam.lookAt(new Vector3f(0f, 0f, 0f), Vector3f.UNIT_Y);
 
-        AmbientLight ambient = new AmbientLight();
-        ambient.setColor(ColorRGBA.White.mult(0.3f));
+        AmbientLight ambient = new AmbientLight(new ColorRGBA(0.6f, 0.6f, 0.6f, 1.0f));
         rootNode.addLight(ambient);
-
-        DirectionalLight sun = new DirectionalLight();
-        sun.setDirection(new Vector3f(-0.5f, -0.8f, -0.4f).normalizeLocal());
-        sun.setColor(ColorRGBA.White.mult(0.7f));
+        DirectionalLight sun = new DirectionalLight(new Vector3f(-0.5f, -0.8f, -0.4f).normalizeLocal(), new ColorRGBA(0.8f, 0.8f, 0.8f, 1.0f));
         rootNode.addLight(sun);
 
-        // 1. Inicializar os AppStates da Simulação
-        uiAppState = new SimulationAppState(); // Estado que a UI manipula
-        simulationEngine = new SimulationAppStates(); // Motor principal da simulação
+        uiAppState = new SimulationAppState();
+        simulationEngine = new SimulationAppStates();
+        uiAppState.setSimulationEngineReference(simulationEngine);
+        simulationEngine.setUiAppStateReference(uiAppState);
 
-        // Fornecer referências cruzadas para comunicação
-        uiAppState.setSimulationEngineReference(simulationEngine); // uiAppState precisa saber sobre o engine
-        simulationEngine.setUiAppStateReference(uiAppState); // engine precisa saber sobre o estado de pausa da uiAppState
+        ControlPanel controlPanelUI = new ControlPanel(this, uiAppState);
+        float cpMargin = 20f;
+        controlPanelUI.setLocalTranslation(cpMargin, cam.getHeight() - cpMargin, 0);
+        guiNode.attachChild(controlPanelUI);
 
-        stateManager.attach(uiAppState);
-        stateManager.attach(simulationEngine);
-
-        // 2. Inicializar e anexar o Painel de Controle
-        // Certifique-se que o nome da classe ControlPanel está correto.
-        // No seu código original, às vezes era 'controlPanel' e às vezes 'ControlPanel'.
-        // Vou usar 'ControlPanel' com 'C' maiúsculo.
-        ControlPanel controlPanel = new ControlPanel(this, uiAppState);
-        // Posicionar o painel de controle (ex: canto superior esquerdo)
-        // Ajuste os valores X e Y conforme necessário para o tamanho do seu painel.
-        controlPanel.setLocalTranslation(20, cam.getHeight() - 20, 0);
-        guiNode.attachChild(controlPanel); // Adiciona à guiNode para elementos 2D
-
-        // 3. Inicializar e anexar o Painel de Estatísticas e seu Atualizador
         StatsPanel statsPanel = new StatsPanel(this);
-        // Posicionar o painel de estatísticas (ex: canto superior direito)
-        // Assumindo que StatsPanel tem aproximadamente 300px de largura.
-        statsPanel.setLocalTranslation(cam.getWidth() - statsPanel.getLocalScale().x * 300 - 20, cam.getHeight() - 20, 0);
+        float statsPanelWidthEst = 300f;
+        float topMargin = 20f;
+        float desiredRightMargin = 20f;
+        float statsPanelX = cam.getWidth() - statsPanelWidthEst - desiredRightMargin;
+        float statsPanelY = cam.getHeight() - topMargin;
+        statsPanel.setLocalTranslation(statsPanelX, statsPanelY, 0);
         guiNode.attachChild(statsPanel);
 
         StatsUpdater statsUpdater = new StatsUpdater(statsPanel, uiAppState);
+
+        initKeys();
+
+        stateManager.attach(uiAppState);
+        stateManager.attach(simulationEngine);
         stateManager.attach(statsUpdater);
 
-        System.out.println("UI Inicializada. ControlPanel e StatsPanel devem estar visíveis.");
+        setDisplayStatView(false);
+        setDisplayFps(false);
+    }
+
+    private void initKeys() {
+        inputManager.addMapping(MAPPING_UI_CLICK, new MouseButtonTrigger(MouseInput.BUTTON_LEFT));
+        inputManager.addListener(this, MAPPING_UI_CLICK);
+    }
+
+    @Override
+    public void onAction(String name, boolean isPressed, float tpf) {
+        if (name.equals(MAPPING_UI_CLICK) && !isPressed) {
+            Vector2f click2d = inputManager.getCursorPosition();
+            Node controlPanel = (Node) guiNode.getChild("MainControlPanel_UI");
+
+            if (controlPanel != null) {
+                for (Spatial uiElement : controlPanel.getChildren()) {
+                    if (uiElement instanceof Button) {
+                        Button button = (Button) uiElement;
+
+                        // [CORRIGIDO] Usa getWorldTranslation() para obter a posição final na tela.
+                        Vector3f buttonPos = button.getWorldTranslation();
+                        float buttonWidth = button.getButtonWidth();
+                        float buttonHeight = button.getButtonHeight();
+
+                        if (click2d.x >= buttonPos.x && click2d.x <= (buttonPos.x + buttonWidth) &&
+                                click2d.y >= buttonPos.y && click2d.y <= (buttonPos.y + buttonHeight)) {
+
+                            System.out.println("CLIQUE DETECTADO E PROCESSADO EM: " + button.getName());
+                            button.triggerClick();
+                            break;
+                        }
+                    }
+                }
+            }
+        }
     }
 }

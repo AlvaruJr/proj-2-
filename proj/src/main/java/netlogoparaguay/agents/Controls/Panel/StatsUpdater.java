@@ -1,11 +1,12 @@
 package netlogoparaguay.agents.Controls.Panel;
 
+import com.jme3.app.Application;
 import com.jme3.app.state.BaseAppState;
 import netlogoparaguay.simulation.SimulationAppState;
 
 public class StatsUpdater extends BaseAppState {
     private final StatsPanel statsPanel;
-    private final SimulationAppState simulation;
+    private final SimulationAppState simulation; // Referência ao estado da UI
     private float timeSinceLastUpdate = 0;
 
     public StatsUpdater(StatsPanel statsPanel, SimulationAppState simulation) {
@@ -17,20 +18,36 @@ public class StatsUpdater extends BaseAppState {
     public void update(float tpf) {
         timeSinceLastUpdate += tpf;
         if (timeSinceLastUpdate > 0.5f) {
-            statsPanel.updateStats(
-                    simulation.getCurrentGuaraniCount(),
-                    simulation.getCurrentJesuitCount(),
-                    simulation.getCurrentLoop(),
-                    simulation.getMaxLoops(),
-                    simulation.getWinner()
-            );
+            if (simulation != null && statsPanel != null && simulation.isEnabled() && isEnabled()) {
+                statsPanel.updateStats(
+                        simulation.getCurrentGuaraniCount(),
+                        simulation.getCurrentJesuitCount(),
+                        simulation.getCurrentLoop(),
+                        simulation.getMaxLoopsSetting(), // CORRIGIDO: Usar getMaxLoopsSetting()
+                        simulation.getWinner()
+                );
+            }
             timeSinceLastUpdate = 0;
         }
     }
 
-    // Other required BaseAppState methods
-    @Override protected void initialize(com.jme3.app.Application app) {}
-    @Override protected void cleanup(com.jme3.app.Application app) {}
-    @Override protected void onEnable() {}
-    @Override protected void onDisable() {}
+    @Override
+    protected void initialize(Application app) {
+        // Lógica de inicialização, se necessário
+    }
+
+    @Override
+    protected void cleanup(Application app) {
+        // Lógica de limpeza, se necessário
+    }
+
+    @Override
+    protected void onEnable() {
+        timeSinceLastUpdate = 0;
+    }
+
+    @Override
+    protected void onDisable() {
+        // Lógica ao desabilitar
+    }
 }

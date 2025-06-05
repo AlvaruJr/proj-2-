@@ -3,26 +3,50 @@ package netlogoparaguay.agents.Controls.controller;
 import java.util.List;
 import netlogoparaguay.agents.Controls.Agent.Agent;
 import netlogoparaguay.agents.Controls.Agent.Guarani; // Importa a classe Guarani para ser o alvo
+// import com.jme3.math.Vector3f; // Necessário se for sobrescrever handleAttacking
 
 /**
  * Controle específico para o comportamento dos agentes Jesuitas.
  * Herda a maior parte da lógica de AgentControl e define que os Guaranis são seus inimigos.
+ * [MODIFICADO] Atributos ajustados para balanceamento.
  */
 public class JesuitControl extends AgentControl {
 
     /**
      * Construtor para JesuitControl.
-     * Configura os parâmetros específicos para os Jesuitas, como velocidade base.
+     * Configura os parâmetros específicos para os Jesuitas.
      * As referências a simulationManager e resourceManager são obtidas
-     * através do método setSpatial da classe AgentControl quando este controle
-     * é anexado a um Agente Jesuit.
+     * através do método setSpatial da classe AgentControl.
      */
     public JesuitControl() {
         super(); // Chama o construtor de AgentControl
-        this.baseSpeed = 2.5f;      // Jesuitas podem ser um pouco mais lentos, mas talvez mais resistentes (definido no Agent)
-        this.attackRange = 1.7f;    // Alcance de ataque ligeiramente maior
-        this.attackCooldownBase = 2.2f; // Cooldown de ataque um pouco maior
-        // A effectiveSpeed será calculada em setSpatial -> updateEffectiveSpeed
+
+        // --- VALORES ORIGINAIS COMENTADOS PARA REFERÊNCIA ---
+        // this.baseSpeed = 2.5f;
+        // this.attackRange = 1.7f;
+        // this.attackCooldownBase = 2.2f;
+
+        // --- NOVOS VALORES PARA BALANCEAMENTO ---
+        // Objetivo: Tornar os Jesuítas mais competitivos contra os Guaranis.
+        // Guaranis (para referência): baseSpeed = 2.8f, attackCooldownBase = 1.8f, attackRange = 1.6f
+
+        // Aumenta a velocidade base dos Jesuitas.
+        // Ainda um pouco mais lentos que os Guaranis, mas a diferença é menor.
+        this.baseSpeed = 2.7f; // Anteriormente 2.5f
+
+        // Mantém o alcance de ataque ligeiramente maior.
+        // Pode ser uma pequena vantagem tática se conseguirem atacar antes.
+        this.attackRange = 1.7f; // Sem alteração
+
+        // Reduz significativamente o cooldown de ataque dos Jesuitas.
+        // Eles atacarão com mais frequência, aproximando-se da cadência dos Guaranis.
+        this.attackCooldownBase = 1.95f; // Anteriormente 2.2f
+
+        // A effectiveSpeed será calculada em setSpatial -> updateEffectiveSpeed com base no baseSpeed.
+
+        System.out.println("JesuitControl: Velocidade base=" + this.baseSpeed +
+                ", Alcance Ataque=" + this.attackRange +
+                ", Cooldown Ataque=" + this.attackCooldownBase);
     }
 
     /**
@@ -43,34 +67,66 @@ public class JesuitControl extends AgentControl {
         }
 
         Agent closestEnemy = null;
-        float minDistanceSq = visionRadius * visionRadius; // Usa o raio de visão definido em AgentControl
+        // Usa o visionRadius definido na classe base AgentControl
+        float minDistanceSq = visionRadius * visionRadius;
 
-        for (Guarani guarani : guaranis) {
+        for (Guarani guaraniTarget : guaranis) {
             // Verifica se o guarani está vivo e é um alvo válido
-            if (guarani != null && !guarani.isDead()) {
+            if (guaraniTarget != null && !guaraniTarget.isDead()) {
                 // Calcula a distância quadrada para otimização (evita Math.sqrt)
-                float distSq = agent.getLocalTranslation().distanceSquared(guarani.getLocalTranslation());
+                float distSq = agent.getLocalTranslation().distanceSquared(guaraniTarget.getLocalTranslation());
                 if (distSq < minDistanceSq) {
                     minDistanceSq = distSq;
-                    closestEnemy = guarani;
+                    closestEnemy = guaraniTarget;
                 }
             }
         }
-
-        // if (closestEnemy != null) {
-        //    System.out.println(agent.getName() + " (Jesuit) encontrou inimigo Guarani: " + closestEnemy.getName());
-        // }
         return closestEnemy;
     }
 
     /**
-     * (Opcional) As subclasses podem sobrescrever 'decideNextState' se tiverem uma lógica
-     * de priorização de estados diferente da padrão em AgentControl.
-     * Para este exemplo, a lógica padrão de AgentControl é suficiente.
+     * (Opcional) Sobrescrever 'handleAttacking' para dar aos Jesuítas uma fórmula de dano diferente.
+     * Se descomentar este método, os Jesuítas usarão esta lógica de ataque em vez da de AgentControl.
+     * Isso pode ser usado para, por exemplo, dar-lhes um bônus de dano base ou um multiplicador de força diferente.
      */
-    // @Override
-    // protected void decideNextState() {
-    //     super.decideNextState(); // Chama a lógica base
-    //     // Adicionar aqui qualquer lógica de decisão específica para Jesuit, se necessário
-    // }
+    /*
+    @Override
+    protected void handleAttacking(float tpfForLogic) {
+        if (currentEnemyTarget == null || currentEnemyTarget.isDead()) {
+            currentState = AgentState.IDLE;
+            currentEnemyTarget = null;
+            return;
+        }
+
+        // Se o inimigo saiu do alcance, volta a persegui-lo
+        if (agent.getLocalTranslation().distance(currentEnemyTarget.getLocalTranslation()) > attackRange) {
+            currentState = AgentState.SEEKING_ENEMY;
+            return;
+        }
+
+        // Se o cooldown do ataque terminou
+        if (currentAttackCooldown <= 0) {
+            agent.lookAt(currentEnemyTarget.getLocalTranslation(), Vector3f.UNIT_Y); // Agente olha para o inimigo
+
+            // --- Fórmula de Dano Modificada para Jesuítas ---
+            // Fórmula original em AgentControl: agent.getStrength() * 2.0f + 5.0f;
+            // Exemplo: Jesuítas têm um bônus de +1 no dano base
+            float damage = agent.getStrength() * 2.0f + 6.5f;
+            // Ou um multiplicador de força ligeiramente maior:
+            // float damage = agent.getStrength() * 2.1f + 5.0f;
+
+            System.out.println(agent.getName() + " (Jesuit) ataca " + currentEnemyTarget.getName() + " causando " + damage + " de dano.");
+            currentEnemyTarget.takeDamage(damage); // Aplica o dano ao inimigo
+
+            currentAttackCooldown = attackCooldownBase; // Reinicia o cooldown de ataque (usa o attackCooldownBase do JesuitControl)
+
+            // Se o inimigo morreu após o ataque
+            if (currentEnemyTarget.isDead()) {
+                System.out.println(currentEnemyTarget.getName() + " foi derrotado por " + agent.getName());
+                currentEnemyTarget = null; // Limpa o alvo
+                currentState = AgentState.IDLE; // Volta ao estado IDLE
+            }
+        }
+    }
+    */
 }

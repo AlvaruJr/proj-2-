@@ -1,3 +1,6 @@
+// build.gradle
+
+// [ALTERADO] Bloco de plugins unificado para um estilo mais moderno.
 plugins {
     id 'application'
     id 'java'
@@ -15,7 +18,7 @@ java {
 }
 
 application {
-    mainClass = 'netlogoparaguay.Main'
+    mainClass = 'netlogoparaguay.Netlogoparaguay'
 
     if (System.getProperty("os.name").toLowerCase().contains("mac")) {
         applicationDefaultJvmArgs = ['-XstartOnFirstThread']
@@ -23,7 +26,7 @@ application {
 }
 
 ext {
-    jmeVersion = '3.6.1-stable' // Versão estável recomendada
+    jmeVersion = '3.6.1-stable'
     log4jVersion = '2.20.0'
     dyn4jVersion = '4.2.0'
 }
@@ -35,24 +38,14 @@ repositories {
 }
 
 dependencies {
-    // Core JMonkeyEngine
     implementation "org.jmonkeyengine:jme3-core:$jmeVersion"
     implementation "org.jmonkeyengine:jme3-desktop:$jmeVersion"
     implementation "org.jmonkeyengine:jme3-lwjgl3:$jmeVersion"
-
-    // Física 2D
+    implementation "org.jmonkeyengine:jme3-plugins:$jmeVersion"
     implementation "org.dyn4j:dyn4j:$dyn4jVersion"
-
-    // GUI básica (removido Lemur para simplificar)
     implementation "org.jmonkeyengine:jme3-niftygui:$jmeVersion"
-
-    // Logging
     implementation "org.apache.logging.log4j:log4j-core:$log4jVersion"
     implementation "org.apache.logging.log4j:log4j-api:$log4jVersion"
-
-    implementation "org.jmonkeyengine:jme3-core:3.6.1-stable"
-    implementation "org.jmonkeyengine:jme3-desktop:3.6.1-stable"
-    implementation "org.jmonkeyengine:jme3-lwjgl3:3.6.1-stable"
 }
 
 shadowJar {
@@ -62,7 +55,6 @@ shadowJar {
     exclude 'META-INF/*.SF'
     exclude 'META-INF/*.DSA'
     exclude 'META-INF/*.RSA'
-
     mergeServiceFiles()
 }
 
@@ -75,7 +67,7 @@ sourceSets {
     }
 }
 
-// Configuração de distribuição para Windows
+// --- Seção de Distribuição para Windows (Mantida) ---
 tasks.register('prepareWindowsDistribution', Copy) {
     from shadowJar
     into layout.buildDirectory.dir('dist/windows')

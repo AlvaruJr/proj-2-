@@ -2,67 +2,105 @@ package netlogoparaguay.simulation;
 
 import com.jme3.app.Application;
 import com.jme3.app.state.BaseAppState;
+import java.util.Arrays;
+import java.util.List;
 
-/**
- * AppState que mantém o estado da simulação que é controlado e exibido pela UI.
- * Serve como uma ponte entre a UI e o motor da simulação (SimulationAppStates).
- */
 public class SimulationAppState extends BaseAppState {
 
-    // Parâmetros configuráveis pela UI
-    private int guaraniCountSetting = 5; // Contagem inicial/configurada padrão
-    private int jesuitCountSetting = 5;  // Contagem inicial/configurada padrão
-    private int maxLoopsSetting = 200;    // Loops padrão
-    private boolean paused = true;       // Começa pausado por padrão
+    private int guaraniCountSetting = 5;
+    private int jesuitCountSetting = 5;
+    private int maxLoopsSetting = 200;
+    private boolean paused = true;
 
-    private SimulationAppStates simulationEngineRef; // Referência ao motor da simulação
+    private SimulationAppStates simulationEngineRef; // Esta é a ponte para o motor
 
-    // Getters para os parâmetros que a UI pode querer ler/definir para configuração inicial
+    private float simulationSpeed = 1.0f;
+    private final List<Float> speedLevels = Arrays.asList(0.25f, 0.5f, 1.0f, 2.0f, 4.0f, 8.0f);
+    private int currentSpeedLevelIndex = 2;
+
+    public SimulationAppState() {
+        // System.out.println("SimulationAppState (Gerenciador de Estado da UI): Instância criada.");
+    }
+
     public int getGuaraniCountSetting() { return guaraniCountSetting; }
     public int getJesuitCountSetting() { return jesuitCountSetting; }
-    public int getMaxLoopsSetting() { return maxLoopsSetting; }
+    public int getMaxLoopsSetting() { return maxLoopsSetting; } // Usado por StatsUpdater
+    public boolean isPaused() { return paused; } // Usado por controlPanel e AgentControl
+    public float getSimulationSpeed() { return simulationSpeed; } // Usado por controlPanel e AgentControl
 
-    public boolean isPaused() { return paused; }
-
-    // Setters que a UI chama para mudar as configurações
-    public void setGuaraniCount(int count) { // Nome original do seu método
+    public void setGuaraniCount(int count) {
         this.guaraniCountSetting = Math.max(0, count);
-        System.out.println("UI: Contagem de Guaranis configurada para: " + this.guaraniCountSetting);
-        // O reset da simulação que aplicará essa contagem é chamado pelo botão "Reset" da UI.
+        // System.out.println("UI State: Guarani count setting: " + this.guaraniCountSetting);
+        // A contagem só terá efeito no próximo reset da simulação.
     }
 
-    public void setJesuitCount(int count) { // Nome original do seu método
+    public void setJesuitCount(int count) {
         this.jesuitCountSetting = Math.max(0, count);
-        System.out.println("UI: Contagem de Jesuitas configurada para: " + this.jesuitCountSetting);
+        // System.out.println("UI State: Jesuit count setting: " + this.jesuitCountSetting);
     }
 
-    public void setMaxLoops(int loops) { // Nome original do seu método
-        this.maxLoopsSetting = Math.max(1, loops);
-        System.out.println("UI: Máximo de loops configurado para: " + this.maxLoopsSetting);
+    public void setMaxLoops(int loops) {
+        this.maxLoopsSetting = Math.max(0, loops);
+        // System.out.println("UI State: Max loops setting: " + this.maxLoopsSetting);
         if (simulationEngineRef != null) {
-            simulationEngineRef.updateMaxLoopsSetting(this.maxLoopsSetting);
+            simulationEngineRef.updateMaxLoopsSetting(this.maxLoopsSetting); // Notifica o motor
         }
     }
 
     public void setPaused(boolean paused) {
         this.paused = paused;
-        System.out.println("UI: Estado de pausa definido para: " + this.paused);
+        // System.out.println("UI State: Paused: " + this.paused);
         if (simulationEngineRef != null) {
-            simulationEngineRef.setSimulationPausedByUi(this.paused);
+            simulationEngineRef.setSimulationPausedByUi(this.paused); // Notifica o motor
         }
     }
 
-    /**
-     * Define a referência para o motor da simulação.
-     * Chamado durante a inicialização em Netlogoparaguay.java.
-     * @param engine A instância de SimulationAppStates (o motor).
-     */
+    public void setSimulationSpeed(float speed) { // Chamado por increase/decrease
+        this.simulationSpeed = Math.max(0.1f, speed);
+        // System.out.println("UI State: Simulation speed: " + this.simulationSpeed + "x");
+        // AgentControl já busca essa velocidade a cada frame, não precisa notificação explícita para o motor,
+        // a menos que o motor precise dela para outros sistemas (ex: ResourceManager respawn timer).
+        // Se ResourceManager precisar, adicione:
+        // if (simulationEngineRef != null) {
+        //     simulationEngineRef.updateSimulationSpeedFactor(this.simulationSpeed);
+        // }
+    }
+
+    public void increaseSimulationSpeed() {
+        if (speedLevels.isEmpty()) return;
+        currentSpeedLevelIndex = (currentSpeedLevelIndex + 1) % speedLevels.size();
+        setSimulationSpeed(speedLevels.get(currentSpeedLevelIndex));
+    }
+
+    public void decreaseSimulationSpeed() {
+        if (speedLevels.isEmpty()) return;
+        currentSpeedLevelIndex = (currentSpeedLevelIndex - 1 + speedLevels.size()) % speedLevels.size();
+        setSimulationSpeed(speedLevels.get(currentSpeedLevelIndex));
+    }
+
+    private void initializeDefaultSpeed() {
+        int defaultIndex = speedLevels.indexOf(1.0f);
+        if (defaultIndex != -1) {
+            this.currentSpeedLevelIndex = defaultIndex;
+        } else if (!speedLevels.isEmpty()) {
+            this.currentSpeedLevelIndex = Math.min(2, speedLevels.size() - 1);
+            // A condição 'this.currentSpeedLevelIndex < 0' era marcada como sempre falsa pelo IDE.
+            // Se Math.min(2, speedLevels.size() - 1) puder ser < 0 (só se speedLevels.size() for 0),
+            // mas speedLevels.isEmpty() já trata isso.
+        }
+
+        if (!speedLevels.isEmpty()) {
+            this.simulationSpeed = speedLevels.get(this.currentSpeedLevelIndex);
+        } else {
+            this.simulationSpeed = 1.0f;
+        }
+        // System.out.println("UI State: Velocidade inicial: " + this.simulationSpeed + "x");
+    }
+
     public void setSimulationEngineReference(SimulationAppStates engine) {
         this.simulationEngineRef = engine;
     }
 
-    // Getters para DADOS AO VIVO da simulação (delegados ao motor)
-    // Usados pelo StatsPanel via StatsUpdater
     public int getCurrentGuaraniCount() {
         return (simulationEngineRef != null) ? simulationEngineRef.getActiveGuaraniCount() : 0;
     }
@@ -75,53 +113,66 @@ public class SimulationAppState extends BaseAppState {
         return (simulationEngineRef != null) ? simulationEngineRef.getCurrentSimulationLoop() : 0;
     }
 
-    public int getMaxLoops() { // Este é o setting para a UI, o motor usa maxLoopsSetting ou o seu próprio
-        return maxLoopsSetting;
-    }
-
     public String getWinner() {
         return (simulationEngineRef != null) ? simulationEngineRef.determineWinner() : "-";
     }
 
-    /**
-     * Chamado pelo botão de Reset da UI.
-     * Solicita ao motor da simulação para resetar com os parâmetros atuais da UI.
-     */
     public void resetSimulation() {
-        System.out.println("UI: Botão Reset pressionado. Solicitando reset da simulação...");
+        // System.out.println("UI State: Comando Reset recebido.");
         if (simulationEngineRef != null) {
+            initializeDefaultSpeed();
             simulationEngineRef.resetSimulationWithSettings(
                     this.guaraniCountSetting,
                     this.jesuitCountSetting,
                     this.maxLoopsSetting
             );
-            // Garante que a simulação fique pausada após o reset para o usuário iniciar.
-            if (!isPaused()) {
+            if (!isPaused()) { // Se estava rodando, pausa após o reset
                 setPaused(true);
+            } else { // Se já estava pausado, apenas garante que o motor saiba
+                simulationEngineRef.setSimulationPausedByUi(true);
             }
         }
     }
 
-    @Override
-    protected void initialize(Application app) {
-        // System.out.println("SimulationAppState (UI State) inicializado.");
+    public void requestAddGuarani() {
+        if (simulationEngineRef != null) simulationEngineRef.dynamicallyAddAgent("Guarani");
+    }
+    public void requestRemoveGuarani() {
+        if (simulationEngineRef != null) simulationEngineRef.dynamicallyRemoveAgent("Guarani");
+    }
+    public void requestAddJesuit() {
+        if (simulationEngineRef != null) simulationEngineRef.dynamicallyAddAgent("Jesuit");
+    }
+    public void requestRemoveJesuit() {
+        if (simulationEngineRef != null) simulationEngineRef.dynamicallyRemoveAgent("Jesuit");
     }
 
     @Override
-    protected void cleanup(Application app) {}
+    protected void initialize(Application app) {
+        initializeDefaultSpeed();
+        // System.out.println("SimulationAppState (Gerenciador de Estado da UI): Inicializado.");
+    }
+
+    @Override
+    protected void cleanup(Application app) {
+        // System.out.println("SimulationAppState (Gerenciador de Estado da UI): Limpo.");
+    }
 
     @Override
     protected void onEnable() {
         if (simulationEngineRef != null) {
             simulationEngineRef.setSimulationPausedByUi(this.paused);
         }
+        // System.out.println("SimulationAppState (Gerenciador de Estado da UI): Habilitado. Pausa: " + this.paused);
     }
 
     @Override
-    protected void onDisable() {}
+    protected void onDisable() {
+        // System.out.println("SimulationAppState (Gerenciador de Estado da UI): Desabilitado.");
+    }
 
     @Override
     public void update(float tpf) {
-        // Este AppState não tem muita lógica de update por si só.
+        // Não precisa de lógica de update aqui, é mais um "data holder" e "event dispatcher"
     }
 }

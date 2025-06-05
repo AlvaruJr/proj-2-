@@ -1,22 +1,20 @@
+
 package netlogoparaguay.simulation;
 
 import com.jme3.app.Application;
 import com.jme3.app.SimpleApplication;
 import com.jme3.app.state.BaseAppState;
 import com.jme3.asset.AssetManager;
-import com.jme3.material.Material;
-import com.jme3.math.ColorRGBA;
 import com.jme3.math.FastMath;
 import com.jme3.math.Vector3f;
-import com.jme3.scene.Geometry;
 import com.jme3.scene.Node;
-import com.jme3.scene.shape.Quad;
-import java.util.List; // Import padrão
-import java.util.concurrent.CopyOnWriteArrayList;
+import com.jme3.scene.Spatial;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Random; // Import já deve existir
 import netlogoparaguay.agents.Controls.Agent.Agent;
 import netlogoparaguay.agents.Controls.Agent.Guarani;
 import netlogoparaguay.agents.Controls.Agent.Jesuit;
-import netlogoparaguay.agents.Controls.controller.AgentControl; // Para WORLD_BOUNDS
 import netlogoparaguay.resources.ResourceManager;
 
 public class SimulationAppStates extends BaseAppState {
@@ -24,307 +22,323 @@ public class SimulationAppStates extends BaseAppState {
     private SimpleApplication app;
     private AssetManager assetManager;
     private Node simulationRootNode;
-
     private ResourceManager resourceManager;
-    private List<Guarani> guaranis;
-    private List<Jesuit> jesuits;
 
-    // Parâmetros de configuração da simulação (podem ser atualizados pela UI)
-    private int configInitialGuaraniCount = 5;
-    private int configInitialJesuitCount = 5;
-    private int configMaxLoops = 200; // Máximo de loops configurado pela UI
+    private List<Guarani> guaranis = new ArrayList<>();
+    private List<Jesuit> jesuits = new ArrayList<>();
 
-    private int maxAgentsPerType = 20;
+    private int initialGuaraniCount = 5;
+    private int initialJesuitCount = 5;
+    private int maxLoops = 200;
+    private int currentLoop = 0;
 
-    private int initialResourcesPerTypeInPool = 10;
-    private int maxActiveResourcesOnMap = 15;
-    private float resourceRespawnInterval = 8.0f;
+    private boolean internalPauseSignal = false;
+    private SimulationAppState uiAppStateRef;
 
-    private static final float WORLD_PLACEMENT_WIDTH = 28f;
-    private static final float WORLD_PLACEMENT_HEIGHT = 28f;
+    private final int res_capacityPerType = 20;
+    private final int res_maxOnMapPerType = 8;
+    private final float res_respawnInterval = 10.0f;
 
-    private boolean internalPauseSignal = false; // Pausa interna do motor (ex: fim de jogo)
-    private SimulationAppState uiAppStateRef;    // Referência ao estado da UI para verificar pausa externa
-    private int currentSimulationLoop = 0;
+    public static final float SIMULATION_AREA_WIDTH = 30f;
+    public static final float SIMULATION_AREA_HEIGHT = 30f;
 
+    // [ADICIONADO] Instância de Random para ser compartilhada com outros componentes, como os AgentControls.
+    public final Random random = new Random();
     @Override
     protected void initialize(Application app) {
         this.app = (SimpleApplication) app;
         this.assetManager = this.app.getAssetManager();
-        this.simulationRootNode = new Node("SimulationRootNode_Engine");
 
-        this.guaranis = new CopyOnWriteArrayList<>();
-        this.jesuits = new CopyOnWriteArrayList<>();
+        // Cria o nó raiz da simulação e o anexa ao rootNode principal da aplicação
+        this.simulationRootNode = new Node("SimulationEngine_RootNode_ParaAgentesERecursos");
+        this.app.getRootNode().attachChild(this.simulationRootNode);
+        System.out.println("SimulationAppStates: simulationRootNode anexado ao rootNode da aplicação.");
 
-        // ResourceManager será criado/recriado em resetSimulationWithSettings
-        // para garantir que use os parâmetros corretos.
+        // Inicializa o ResourceManager, passando o nó onde os recursos devem ser adicionados
+        this.resourceManager = new ResourceManager(
+                this.assetManager,
+                this.simulationRootNode, // Recursos serão filhos deste nó
+                res_capacityPerType,
+                res_maxOnMapPerType,
+                res_respawnInterval,
+                SIMULATION_AREA_WIDTH,
+                SIMULATION_AREA_HEIGHT
+        );
+        System.out.println("SimulationAppStates: ResourceManager inicializado.");
 
-        createEnvironment(); // Cria o fundo/chão
-
-        // A simulação começa efetivamente quando resetSimulationWithSettings é chamado
-        // pela primeira vez (pode ser pela UI ou um default).
-        // Se uiAppStateRef já estiver disponível, usa os settings dele.
         if (uiAppStateRef != null) {
             resetSimulationWithSettings(
                     uiAppStateRef.getGuaraniCountSetting(),
                     uiAppStateRef.getJesuitCountSetting(),
                     uiAppStateRef.getMaxLoopsSetting()
             );
-            // Garante que o estado de pausa inicial seja o da UI
             setSimulationPausedByUi(uiAppStateRef.isPaused());
         } else {
-            // Fallback para defaults se uiAppStateRef não estiver pronto
-            resetSimulationWithSettings(
-                    configInitialGuaraniCount,
-                    configInitialJesuitCount,
-                    configMaxLoops
-            );
-            setSimulationPausedByUi(true); // Começa pausado por default
+            System.out.println("SimulationAppStates: uiAppStateRef é nulo na inicialização. Usando defaults.");
+            resetSimulationWithSettings(initialGuaraniCount, initialJesuitCount, maxLoops);
+            setSimulationPausedByUi(true); // Começa pausado por padrão
         }
-
-        System.out.println("SimulationAppStates (Motor) inicializado.");
-    }
-
-    public void setUiAppStateReference(SimulationAppState uiState) {
-        this.uiAppStateRef = uiState;
-        // Se o motor já foi inicializado, sincroniza o estado de pausa e loops
-        if (isInitialized() && this.uiAppStateRef != null) {
-            setSimulationPausedByUi(this.uiAppStateRef.isPaused());
-            updateMaxLoopsSetting(this.uiAppStateRef.getMaxLoopsSetting());
-            // Pode ser necessário um reset se as contagens de agentes mudarem e a simulação já estiver rodando.
-            // A UI tipicamente força um reset ao mudar contagens.
-        }
-    }
-
-    private void createEnvironment() {
-        // Chão 3D
-        Quad bgQuad = new Quad(AgentControl.WORLD_BOUNDS, AgentControl.WORLD_BOUNDS);
-        Geometry bgGeom = new Geometry("BackgroundFloor", bgQuad);
-        Material bgMat = new Material(assetManager, "Common/MatDefs/Light/Lighting.j3md");
-        bgMat.setBoolean("UseMaterialColors", true);
-        bgMat.setColor("Diffuse", new ColorRGBA(0.4f, 0.45f, 0.3f, 1.0f));
-        bgMat.setColor("Ambient", new ColorRGBA(0.2f, 0.22f, 0.15f, 1.0f));
-        bgGeom.setMaterial(bgMat);
-        bgGeom.setLocalTranslation(-AgentControl.WORLD_BOUNDS / 2f, -AgentControl.WORLD_BOUNDS / 2f, -0.1f);
-        simulationRootNode.attachChild(bgGeom);
-    }
-
-    private void createInitialAgents() {
-        // Limpa listas antes de adicionar, caso seja um reset
-        for (Guarani g : this.guaranis) { g.removeFromParent(); }
-        this.guaranis.clear();
-        for (Jesuit j : this.jesuits) { j.removeFromParent(); }
-        this.jesuits.clear();
-
-        for (int i = 0; i < configInitialGuaraniCount; i++) {
-            Guarani guarani = new Guarani("Guarani_" + i, assetManager, this);
-            guarani.setLocalTranslation(getRandomInitialPosition());
-            guaranis.add(guarani);
-            simulationRootNode.attachChild(guarani);
-        }
-
-        for (int i = 0; i < configInitialJesuitCount; i++) {
-            Jesuit jesuit = new Jesuit("Jesuit_" + i, assetManager, this);
-            jesuit.setLocalTranslation(getRandomInitialPosition());
-            jesuits.add(jesuit);
-            simulationRootNode.attachChild(jesuit);
-        }
-    }
-
-    private Vector3f getRandomInitialPosition() {
-        float x = (FastMath.nextRandomFloat() - 0.5f) * WORLD_PLACEMENT_WIDTH;
-        float y = (FastMath.nextRandomFloat() - 0.5f) * WORLD_PLACEMENT_HEIGHT;
-        return new Vector3f(x, y, 0f);
-    }
-
-    public void updateMaxLoopsSetting(int newMaxLoops) {
-        this.configMaxLoops = Math.max(1, newMaxLoops);
-    }
-
-    @Override
-    public void update(float tpf) {
-        boolean effectivelyPaused = internalPauseSignal || (uiAppStateRef != null && uiAppStateRef.isPaused());
-
-        if (effectivelyPaused || !isEnabled()) {
-            return;
-        }
-
-        currentSimulationLoop++;
-        if (currentSimulationLoop >= configMaxLoops) {
-            internalPauseSignal = true; // Pausa interna por fim de loops
-            if (uiAppStateRef != null) {
-                uiAppStateRef.setPaused(true); // Sincroniza com a UI
-            }
-            System.out.println("Simulação (Motor) atingiu o máximo de loops: " + configMaxLoops);
-            // Não retorna aqui, permite que o ResourceManager e outras lógicas finais de update ocorram.
-        }
-
-        if (resourceManager != null) {
-            resourceManager.update(tpf);
-        }
-
-        // Lógica de fim de jogo (simples)
-        if (getActiveGuaraniCount() == 0 && getActiveJesuitCount() > 0) {
-            internalPauseSignal = true;
-            // System.out.println("Motor: Jesuitas Venceram (extermínio)!");
-        } else if (getActiveJesuitCount() == 0 && getActiveGuaraniCount() > 0) {
-            internalPauseSignal = true;
-            // System.out.println("Motor: Guaranis Venceram (extermínio)!");
-        } else if (getActiveGuaraniCount() == 0 && getActiveJesuitCount() == 0 && currentSimulationLoop > 0) {
-            internalPauseSignal = true;
-            // System.out.println("Motor: Empate (extermínio mútuo)!");
-        }
-
-        if (internalPauseSignal && uiAppStateRef != null && !uiAppStateRef.isPaused()) {
-            uiAppStateRef.setPaused(true); // Garante que a UI reflita a pausa interna
-        }
-    }
-
-    public void notifyAgentDeath(Agent deadAgent) {
-        boolean removed = false;
-        if (deadAgent instanceof Guarani) {
-            removed = guaranis.remove((Guarani) deadAgent);
-        } else if (deadAgent instanceof Jesuit) {
-            removed = jesuits.remove((Jesuit) deadAgent);
-        }
-        if (deadAgent.getParent() != null) {
-            deadAgent.removeFromParent(); // Garante remoção da cena
-        }
-    }
-
-    public boolean requestAgentMultiplication(Agent parentAgent) {
-        Vector3f spawnPosition = parentAgent.getLocalTranslation().add(
-                new Vector3f(FastMath.nextRandomFloat() * 2f - 1f,
-                        FastMath.nextRandomFloat() * 2f - 1f, 0f)
-                        .normalizeLocal().multLocal(1.5f)
-        );
-
-        spawnPosition.x = FastMath.clamp(spawnPosition.x, -WORLD_PLACEMENT_WIDTH/2f, WORLD_PLACEMENT_WIDTH/2f);
-        spawnPosition.y = FastMath.clamp(spawnPosition.y, -WORLD_PLACEMENT_HEIGHT/2f, WORLD_PLACEMENT_HEIGHT/2f);
-        spawnPosition.z = 0f;
-
-        if (parentAgent instanceof Guarani) {
-            if (guaranis.size() < maxAgentsPerType) {
-                Guarani newGuarani = new Guarani(parentAgent.getName() + "_m" + guaranis.size() , assetManager, this);
-                newGuarani.setLocalTranslation(spawnPosition);
-                guaranis.add(newGuarani);
-                simulationRootNode.attachChild(newGuarani);
-                return true;
-            }
-        } else if (parentAgent instanceof Jesuit) {
-            if (jesuits.size() < maxAgentsPerType) {
-                Jesuit newJesuit = new Jesuit(parentAgent.getName() + "_m" + jesuits.size(), assetManager, this);
-                newJesuit.setLocalTranslation(spawnPosition);
-                jesuits.add(newJesuit);
-                simulationRootNode.attachChild(newJesuit);
-                return true;
-            }
-        }
-        return false;
     }
 
     public void resetSimulationWithSettings(int initialGuaranis, int initialJesuits, int newMaxLoops) {
-        System.out.println("Motor da Simulação: Resetando com Guaranis=" + initialGuaranis +
-                ", Jesuitas=" + initialJesuits + ", Loops=" + newMaxLoops);
+        System.out.println("Motor: Resetando simulação -> G:" + initialGuaranis + ", J:" + initialJesuits + ", Loops:" + newMaxLoops);
+        this.currentLoop = 0;
+        this.internalPauseSignal = false;
+        this.initialGuaraniCount = initialGuaranis;
+        this.initialJesuitCount = initialJesuits;
+        this.maxLoops = newMaxLoops;
 
-        // Limpa recursos existentes
-        if (resourceManager != null) {
-            resourceManager.cleanup();
-        }
-        // Recria o ResourceManager para garantir estado limpo e novas configurações se necessário
-        this.resourceManager = new ResourceManager(
-                this.assetManager,
-                this.simulationRootNode,
-                initialResourcesPerTypeInPool,
-                maxActiveResourcesOnMap,
-                resourceRespawnInterval
-        );
-
-        // Atualiza contagens e loops de configuração
-        this.configInitialGuaraniCount = initialGuaranis;
-        this.configInitialJesuitCount = initialJesuits;
-        this.configMaxLoops = newMaxLoops;
-        this.currentSimulationLoop = 0;
-        this.internalPauseSignal = false; // Reseta a pausa interna
-
-        // Recria agentes iniciais (método createInitialAgents já limpa as listas)
+        cleanupAgentsAndResources();
         createInitialAgents();
 
-        System.out.println("Motor da Simulação: Reset concluído.");
-        // O estado de pausa da UI será definido pelo SimulationAppState após o reset.
+        if (resourceManager != null) {
+            System.out.println("Motor: Chamando resourceManager.resetAndRepopulate()...");
+            resourceManager.resetAndRepopulate(); // ESSENCIAL PARA OS RECURSOS APARECEREM
+        } else {
+            System.err.println("Motor ERRO: ResourceManager é nulo durante o reset!");
+        }
+
+        if (uiAppStateRef != null) {
+            setSimulationPausedByUi(uiAppStateRef.isPaused());
+        } else {
+            this.internalPauseSignal = true;
+        }
+        System.out.println("Motor: Reset concluído.");
+    }
+
+    private void createInitialAgents() {
+        System.out.println("Motor: Criando agentes iniciais...");
+        for (int i = 0; i < initialGuaraniCount; i++) {
+            addAgentToList(new Guarani("Guarani_" + (i + 1), assetManager, this), guaranis);
+        }
+        for (int i = 0; i < initialJesuitCount; i++) {
+            addAgentToList(new Jesuit("Jesuit_" + (i + 1), assetManager, this), jesuits);
+        }
+        System.out.println("Motor: " + guaranis.size() + " Guaranis e " + jesuits.size() + " Jesuitas criados.");
+    }
+
+    private <T extends Agent> void addAgentToList(T agent, List<T> list) {
+        float x = (random.nextFloat() - 0.5f) * (SIMULATION_AREA_WIDTH - 2f);
+        float y = (random.nextFloat() - 0.5f) * (SIMULATION_AREA_HEIGHT - 2f);
+        agent.setLocalTranslation(x, y, 0);
+        list.add(agent);
+        // Adiciona o agente ao nó da simulação, NÃO ao guiNode
+        if (simulationRootNode != null) {
+            simulationRootNode.attachChild(agent);
+        } else {
+            System.err.println("ERRO: simulationRootNode é nulo ao tentar adicionar agente " + agent.getName());
+        }
+    }
+
+    public Agent dynamicallyAddAgent(String type) {
+        Agent newAgent = null;
+        if ("Guarani".equalsIgnoreCase(type) && guaranis.size() < 50) {
+            newAgent = new Guarani("Guarani_d" + (guaranis.size() + 1), assetManager, this);
+            addAgentToList((Guarani)newAgent, guaranis);
+            System.out.println("Motor: Adicionado dinamicamente Guarani. Total: " + guaranis.size());
+        } else if ("Jesuit".equalsIgnoreCase(type) && jesuits.size() < 50) {
+            newAgent = new Jesuit("Jesuit_d" + (jesuits.size() + 1), assetManager, this);
+            addAgentToList((Jesuit)newAgent, jesuits);
+            System.out.println("Motor: Adicionado dinamicamente Jesuit. Total: " + jesuits.size());
+        }
+        return newAgent;
+    }
+
+    public void dynamicallyRemoveAgent(String type) {
+        Agent agentToRemove = null;
+        if ("Guarani".equalsIgnoreCase(type) && !guaranis.isEmpty()) {
+            agentToRemove = guaranis.remove(guaranis.size() - 1);
+        } else if ("Jesuit".equalsIgnoreCase(type) && !jesuits.isEmpty()) {
+            agentToRemove = jesuits.remove(jesuits.size() - 1);
+        }
+        if (agentToRemove != null) {
+            agentToRemove.removeFromParent();
+            System.out.println("Motor: Removido dinamicamente " + agentToRemove.getName());
+        }
     }
 
     @Override
     protected void cleanup(Application app) {
-        if (resourceManager != null) {
-            resourceManager.cleanup();
+        System.out.println("Motor: Iniciando cleanup...");
+        cleanupAgentsAndResources();
+        if (simulationRootNode != null && simulationRootNode.getParent() != null) {
+            // Destaca o nó da simulação do nó raiz da aplicação
+            this.app.getRootNode().detachChild(simulationRootNode);
+            System.out.println("Motor: simulationRootNode destacado do rootNode da aplicação.");
+        } else if (simulationRootNode != null) {
+            System.out.println("Motor: simulationRootNode não tinha pai ou já foi destacado.");
         }
-        for (Guarani g : guaranis) { g.removeFromParent(); }
+        System.out.println("Motor: Limpo (cleanup).");
+    }
+
+    private void cleanupAgentsAndResources() {
+        System.out.println("Motor: Limpando agentes e recursos...");
+        if (resourceManager != null) {
+            resourceManager.cleanupAllResources();
+        } else {
+            System.err.println("Motor ERRO: ResourceManager é nulo durante cleanupAgentsAndResources!");
+        }
+
+        // Remove agentes da lista e da cena
+        for (Guarani g : new ArrayList<>(guaranis)) { // Itera sobre cópia para evitar ConcurrentModification
+            if (g.getParent() != null) g.getParent().detachChild(g);
+        }
         guaranis.clear();
-        for (Jesuit j : jesuits) { j.removeFromParent(); }
+        for (Jesuit j : new ArrayList<>(jesuits)) {
+            if (j.getParent() != null) j.getParent().detachChild(j);
+        }
         jesuits.clear();
 
+        // Garante que o nó raiz da simulação esteja limpo
         if (simulationRootNode != null) {
-            simulationRootNode.detachAllChildren(); // Limpa todos os filhos (incluindo fundo)
-            createEnvironment(); // Recria o fundo para o próximo enable, se houver
+            simulationRootNode.detachAllChildren();
+            System.out.println("Motor: Todos os filhos de simulationRootNode foram destacados.");
         }
-        System.out.println("SimulationAppStates (Motor) limpo.");
     }
 
     @Override
     protected void onEnable() {
-        if (simulationRootNode != null && this.app != null) {
-            if (simulationRootNode.getParent() == null) { // Evita adicionar múltiplas vezes
-                this.app.getRootNode().attachChild(simulationRootNode);
-            }
-        }
-        // Sincroniza o estado de pausa com a UI ao ser habilitado
+        if (simulationRootNode != null) simulationRootNode.setCullHint(Spatial.CullHint.Inherit);
+        System.out.println("Motor: Habilitado.");
         if (uiAppStateRef != null) {
             setSimulationPausedByUi(uiAppStateRef.isPaused());
-        } else {
-            // Se não houver UI state, pode definir um default, ex: começar pausado
-            // this.internalPauseSignal = true;
         }
     }
 
     @Override
     protected void onDisable() {
-        if (simulationRootNode != null && simulationRootNode.getParent() != null) {
-            simulationRootNode.getParent().detachChild(simulationRootNode);
+        if (simulationRootNode != null) simulationRootNode.setCullHint(Spatial.CullHint.Always);
+        System.out.println("Motor: Desabilitado.");
+    }
+
+    @Override
+    public void update(float tpf) {
+        boolean isPausedByUI = false;
+        float currentSimSpeed = 1.0f;
+
+        if (uiAppStateRef != null) {
+            isPausedByUI = uiAppStateRef.isPaused();
+            currentSimSpeed = uiAppStateRef.getSimulationSpeed();
         }
-        // Não necessariamente define internalPauseSignal = true aqui, pois pode ser
-        // desabilitado temporariamente pelo StateManager por outras razões.
-        // A pausa da UI é a principal controladora externa.
+
+        if (internalPauseSignal || isPausedByUI || !isEnabled()) {
+            return;
+        }
+
+        float effectiveTpf = tpf * currentSimSpeed;
+        currentLoop++;
+
+        if (maxLoops > 0 && currentLoop >= maxLoops) {
+            if(!internalPauseSignal) System.out.println("Motor: Máximo de loops (" + maxLoops + ") atingido.");
+            internalPauseSignal = true;
+            if (uiAppStateRef != null) {
+                uiAppStateRef.setPaused(true);
+            }
+        }
+
+        if (resourceManager != null) {
+            resourceManager.update(effectiveTpf);
+        }
+
+        if (currentLoop > 0 && currentLoop % 50 == 0) {
+            resetMultiplicationFlags();
+        }
     }
 
-    public void setSimulationPausedByUi(boolean paused) {
-        this.internalPauseSignal = paused;
+    public void notifyAgentDeath(Agent deadAgent) {
+        if (deadAgent == null) return;
+        // System.out.println("Motor: Notificado da morte de " + deadAgent.getName());
+        if (deadAgent.getParent() != null) {
+            deadAgent.getParent().detachChild(deadAgent); // Remove da cena
+        }
+        boolean removed = false;
+        if (deadAgent instanceof Guarani) {
+            removed = guaranis.remove(deadAgent);
+        } else if (deadAgent instanceof Jesuit) {
+            removed = jesuits.remove(deadAgent);
+        }
+        // if(removed) System.out.println("Motor: " + deadAgent.getName() + " removido das listas ativas.");
+        // else System.out.println("Motor: " + deadAgent.getName() + " não encontrado nas listas ativas para remoção pós-morte.");
+
+
+        boolean guaranisRemaining = !guaranis.isEmpty();
+        boolean jesuitsRemaining = !jesuits.isEmpty();
+
+        if (currentLoop > 0 && (!guaranisRemaining || !jesuitsRemaining)) {
+            if (!internalPauseSignal) System.out.println("Motor: Condição de fim de jogo por extermínio atingida.");
+            internalPauseSignal = true;
+            if(uiAppStateRef != null) uiAppStateRef.setPaused(true);
+        }
     }
 
-    // Getters para o SimulationAppState (UI) e StatsUpdater
+    private void resetMultiplicationFlags() {
+        for (Guarani g : guaranis) g.resetMultiplicationPossibility();
+        for (Jesuit j : jesuits) j.resetMultiplicationPossibility();
+    }
+
+    public boolean requestAgentMultiplication(Agent parent) {
+        Agent newAgent = null;
+        float offsetX = (random.nextFloat() - 0.5f) * 2f;
+        float offsetY = (random.nextFloat() - 0.5f) * 2f;
+        Vector3f childPosition = parent.getLocalTranslation().add(offsetX, offsetY, 0);
+
+        childPosition.x = FastMath.clamp(childPosition.x, -SIMULATION_AREA_WIDTH / 2f + 0.5f, SIMULATION_AREA_WIDTH / 2f - 0.5f);
+        childPosition.y = FastMath.clamp(childPosition.y, -SIMULATION_AREA_HEIGHT / 2f + 0.5f, SIMULATION_AREA_HEIGHT / 2f - 0.5f);
+
+        if (parent instanceof Guarani && guaranis.size() < 50) {
+            newAgent = new Guarani("Guarani_c" + (guaranis.size() + 1), assetManager, this);
+            addAgentToList((Guarani)newAgent, guaranis);
+        } else if (parent instanceof Jesuit && jesuits.size() < 50) {
+            newAgent = new Jesuit("Jesuit_c" + (jesuits.size() + 1), assetManager, this);
+            addAgentToList((Jesuit)newAgent, jesuits);
+        }
+
+        if (newAgent != null) {
+            // System.out.println("Motor: " + parent.getName() + " multiplicou. Novo: " + newAgent.getName());
+            return true;
+        }
+        return false;
+    }
+
+    public List<Guarani> getGuaranis() { return guaranis; }
+    public List<Jesuit> getJesuits() { return jesuits; }
+    public ResourceManager getResourceManager() { return resourceManager; }
+    public SimulationAppState getUiAppStateReference() { return uiAppStateRef; }
     public int getActiveGuaraniCount() { return guaranis.size(); }
     public int getActiveJesuitCount() { return jesuits.size(); }
-    public int getCurrentSimulationLoop() { return currentSimulationLoop; }
-    public List<Guarani> getGuaranis() { return guaranis; } // Usado por AgentControl
-    public List<Jesuit> getJesuits() { return jesuits; }   // Usado por AgentControl
-    public ResourceManager getResourceManager() { return resourceManager; } // Usado por AgentControl
+    public int getCurrentSimulationLoop() { return currentLoop; }
 
     public String determineWinner() {
         boolean guaranisExist = !guaranis.isEmpty();
         boolean jesuitsExist = !jesuits.isEmpty();
 
-        // Verifica se o limite de loops foi atingido
-        if (currentSimulationLoop >= configMaxLoops && configMaxLoops > 0) {
+        if (maxLoops > 0 && currentLoop >= maxLoops && internalPauseSignal) { // Verifica se pausou por loops
             if (guaranis.size() > jesuits.size()) return "Guarani (Tempo)";
             if (jesuits.size() > guaranis.size()) return "Jesuita (Tempo)";
             return "Empate (Tempo)";
         }
 
-        // Verifica condições de extermínio
-        if (guaranisExist && !jesuitsExist) return "Guarani";
-        if (!jesuitsExist && jesuitsExist) return "Jesuita";
-        if (!guaranisExist && !jesuitsExist && currentSimulationLoop > 0) return "Empate (Extinção)"; // Evita "Empate" no loop 0
-
+        // Verifica vitória por extermínio apenas se a simulação não terminou por loops e está pausada internamente
+        if (internalPauseSignal) {
+            if (guaranisExist && !jesuitsExist) return "Guarani";
+            if (!guaranisExist && jesuitsExist) return "Jesuita";
+            if (!guaranisExist && !jesuitsExist && currentLoop > 0) return "Empate (Extermínio)";
+        }
         return "-"; // Jogo em andamento
     }
+
+    public void setUiAppStateReference(SimulationAppState uiState) { this.uiAppStateRef = uiState; }
+
+    public void setSimulationPausedByUi(boolean pausedFromUi) {
+        if (internalPauseSignal && !pausedFromUi) { // Se motor pausou (fim de jogo), UI não pode despausar
+            if (uiAppStateRef != null) {
+                uiAppStateRef.setPaused(true);
+            }
+            // System.out.println("Motor: UI tentou despausar, mas motor está internamente pausado.");
+            return;
+        }
+        // System.out.println("Motor: Estado de pausa da UI ("+pausedFromUi+") recebido e será aplicado no próximo update do motor.");
+        // O estado de pausa da UI é verificado diretamente no método update() do motor.
+    }
+    public void updateMaxLoopsSetting(int newMaxLoops) { this.maxLoops = newMaxLoops; }
 }
