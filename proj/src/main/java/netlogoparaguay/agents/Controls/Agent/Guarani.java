@@ -35,7 +35,10 @@ public class Guarani extends Agent {
             throw new RuntimeException("Falha ao inicializar modelo Guarani", e);
         }
     }
-
+    @Override
+    public float calculateMaxHealth() {
+        return 80 + vitality * 10;
+    }
     @Override
     protected AgentControl createControl() {
         return new GuaraniControl();

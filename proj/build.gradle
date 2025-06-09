@@ -1,6 +1,3 @@
-// build.gradle
-
-// [ALTERADO] Bloco de plugins unificado para um estilo mais moderno.
 plugins {
     id 'application'
     id 'java'
@@ -51,7 +48,6 @@ dependencies {
 shadowJar {
     minimize()
     archiveFileName = "NetlogoParaguay.jar"
-
     exclude 'META-INF/*.SF'
     exclude 'META-INF/*.DSA'
     exclude 'META-INF/*.RSA'
@@ -67,7 +63,6 @@ sourceSets {
     }
 }
 
-// --- Seção de Distribuição para Windows (Mantida) ---
 tasks.register('prepareWindowsDistribution', Copy) {
     from shadowJar
     into layout.buildDirectory.dir('dist/windows')
@@ -95,11 +90,9 @@ tasks.register('createWindowsDistribution', Zip) {
     dependsOn shadowJar, unpackWindowsJRE
     archiveFileName = "NetlogoParaguay-windows.zip"
     destinationDirectory = layout.buildDirectory.dir('distributions')
-
     from prepareWindowsDistribution
     from layout.buildDirectory.dir('jre/windows')
     from file('scripts/desktopDeployment/Netlogoparaguay.bat')
-
     into 'NetlogoParaguay'
 }
 

@@ -12,7 +12,6 @@ import com.jme3.math.Vector3f;
 import com.jme3.scene.Node;
 import com.jme3.scene.Spatial;
 import com.jme3.system.AppSettings;
-
 import netlogoparaguay.simulation.SimulationAppState;
 import netlogoparaguay.simulation.SimulationAppStates;
 import netlogoparaguay.agents.Controls.controller.ControlPanel;
@@ -42,7 +41,6 @@ public class Netlogoparaguay extends SimpleApplication implements ActionListener
         if (flyCam != null) {
             flyCam.setDragToRotate(false);
             flyCam.setEnabled(false);
-            System.out.println("FlyCam desabilitada (cursor visível).");
         }
         inputManager.setCursorVisible(true);
 
@@ -61,7 +59,14 @@ public class Netlogoparaguay extends SimpleApplication implements ActionListener
 
         ControlPanel controlPanelUI = new ControlPanel(this, uiAppState);
         float cpMargin = 20f;
-        controlPanelUI.setLocalTranslation(cpMargin, cam.getHeight() - cpMargin, 0);
+
+        // ***************************************************************
+        // MODIFICAÇÃO ÚNICA: Abaixando toda a coluna da esquerda.
+        // Adicionamos um deslocamento de 30 pixels para baixo (- 30f)
+        // para alinhar com o painel de estatísticas da direita.
+        // ***************************************************************
+        controlPanelUI.setLocalTranslation(cpMargin, cam.getHeight() - cpMargin - 30f, 0);
+
         guiNode.attachChild(controlPanelUI);
 
         StatsPanel statsPanel = new StatsPanel(this);
@@ -101,7 +106,6 @@ public class Netlogoparaguay extends SimpleApplication implements ActionListener
                     if (uiElement instanceof Button) {
                         Button button = (Button) uiElement;
 
-                        // [CORRIGIDO] Usa getWorldTranslation() para obter a posição final na tela.
                         Vector3f buttonPos = button.getWorldTranslation();
                         float buttonWidth = button.getButtonWidth();
                         float buttonHeight = button.getButtonHeight();
@@ -109,7 +113,6 @@ public class Netlogoparaguay extends SimpleApplication implements ActionListener
                         if (click2d.x >= buttonPos.x && click2d.x <= (buttonPos.x + buttonWidth) &&
                                 click2d.y >= buttonPos.y && click2d.y <= (buttonPos.y + buttonHeight)) {
 
-                            System.out.println("CLIQUE DETECTADO E PROCESSADO EM: " + button.getName());
                             button.triggerClick();
                             break;
                         }
