@@ -16,7 +16,10 @@ public class Jesuit extends Agent {
         super(name, assetManager, simulationManager); // Chama o construtor da classe Agent
         // Qualquer inicialização específica do Jesuit aqui
     }
-
+@Override
+public float calculateMaxHealth() {
+    return 100 + vitality * 7;
+}
     @Override
     protected Spatial loadModel(AssetManager assetManager) {
         try {

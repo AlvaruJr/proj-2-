@@ -7,7 +7,7 @@ import com.jme3.renderer.ViewPort;
 import com.jme3.scene.Spatial;
 import com.jme3.scene.control.AbstractControl;
 import java.util.List;
-import java.util.Random; // O import permanece
+import java.util.Random;
 import netlogoparaguay.agents.Controls.Agent.Agent;
 import netlogoparaguay.resources.Resource;
 import netlogoparaguay.resources.ResourceManager;
@@ -16,8 +16,9 @@ import netlogoparaguay.simulation.SimulationAppStates;
 
 public abstract class AgentControl extends AbstractControl {
 
+    // MODIFICAÇÃO: Adicionado o estado FLEEING
     protected enum AgentState {
-        IDLE, SEEKING_RESOURCE, COLLECTING_RESOURCE, SEEKING_ENEMY, ATTACKING
+        IDLE, SEEKING_RESOURCE, COLLECTING_RESOURCE, SEEKING_ENEMY, ATTACKING, FLEEING
     }
 
     protected Agent agent;
@@ -45,8 +46,6 @@ public abstract class AgentControl extends AbstractControl {
     protected static final float TARGET_REACHED_THRESHOLD = 0.5f;
     protected AgentState currentState = AgentState.IDLE;
 
-    // [ALTERADO] A instância de Random não é mais inicializada aqui.
-    // Ela será obtida do simulationManager para otimização.
     private Random random;
 
     public AgentControl() {
@@ -59,7 +58,6 @@ public abstract class AgentControl extends AbstractControl {
             this.agent = (Agent) spatial;
             this.simulationManager = this.agent.getSimulationManager();
             if (this.simulationManager != null) {
-                // [ADICIONADO] Obtém a referência do Random compartilhado.
                 this.random = this.simulationManager.random;
                 this.resourceManager = this.simulationManager.getResourceManager();
                 if (this.resourceManager == null) {
@@ -84,13 +82,10 @@ public abstract class AgentControl extends AbstractControl {
     @Override
     protected void controlUpdate(float tpf) {
         if (agent == null || agent.isDead() || !isEnabled() || simulationManager == null) {
-            // Se resourceManager for nulo, a lógica abaixo já lida com isso.
             return;
         }
 
         if (resourceManager == null && currentState != AgentState.IDLE && currentState != AgentState.SEEKING_ENEMY && currentState != AgentState.ATTACKING) {
-            // Se não há resource manager, e o agente está tentando buscar/coletar recurso, força IDLE.
-            // System.out.println(agent.getName() + " não tem RM e tentou estado de recurso. Forçando IDLE.");
             currentState = AgentState.IDLE;
         }
 
@@ -115,12 +110,16 @@ public abstract class AgentControl extends AbstractControl {
 
         decideNextState();
 
+        // MODIFICAÇÃO: Adicionado o case para o novo estado FLEEING
         switch (currentState) {
             case SEEKING_ENEMY:
                 handleSeekingEnemy(effectiveTpf);
                 break;
             case ATTACKING:
                 handleAttacking(effectiveTpf);
+                break;
+            case FLEEING:
+                handleFleeing(effectiveTpf);
                 break;
             case SEEKING_RESOURCE:
                 handleSeekingResource(effectiveTpf);
@@ -175,7 +174,7 @@ public abstract class AgentControl extends AbstractControl {
                 agent.getLocalTranslation().distance(currentMoveTarget) < TARGET_REACHED_THRESHOLD) {
             float bounds = WORLD_BOUNDS;
             currentMoveTarget = new Vector3f(
-                    (random.nextFloat() - 0.5f) * (bounds - 2f), // AGORA random.nextFloat() DEVE FUNCIONAR
+                    (random.nextFloat() - 0.5f) * (bounds - 2f),
                     (random.nextFloat() - 0.5f) * (bounds - 2f),
                     0
             );
@@ -194,6 +193,33 @@ public abstract class AgentControl extends AbstractControl {
         }
         moveTo(currentEnemyTarget.getLocalTranslation(), tpfForMovement);
     }
+
+    // MÉTODO NOVO: Lógica para fugir de um inimigo
+    protected void handleFleeing(float tpfForMovement) {
+        if (currentEnemyTarget == null || currentEnemyTarget.isDead()) {
+            currentState = AgentState.IDLE;
+            currentEnemyTarget = null;
+            return;
+        }
+
+        // Calcula a direção oposta ao inimigo
+        Vector3f agentPos = agent.getLocalTranslation();
+        Vector3f enemyPos = currentEnemyTarget.getLocalTranslation();
+        Vector3f directionAway = agentPos.subtract(enemyPos);
+
+        // Define um ponto de fuga naquela direção
+        Vector3f fleeTarget = agentPos.add(directionAway.normalize().mult(visionRadius));
+
+        // Move o agente para o ponto de fuga
+        moveTo(fleeTarget, tpfForMovement);
+
+        // O agente para de fugir se o inimigo se afastar muito
+        if (agent.getLocalTranslation().distance(currentEnemyTarget.getLocalTranslation()) > visionRadius * 1.5f) {
+            currentEnemyTarget = null;
+            currentState = AgentState.IDLE;
+        }
+    }
+
 
     protected void handleAttacking(float tpfForLogic) {
         if (currentEnemyTarget == null || currentEnemyTarget.isDead()) {

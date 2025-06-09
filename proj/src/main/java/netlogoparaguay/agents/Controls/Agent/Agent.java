@@ -24,7 +24,7 @@ public abstract class Agent extends Node {
 
     // Atributos para lógica de multiplicação
     protected static final int VITALITY_NEEDED_TO_MULTIPLY = 3;
-    protected static final int RESOURCES_COLLECTED_TO_MULTIPLY = 5;
+    protected static final int RESOURCES_COLLECTED_TO_MULTIPLY = 3;
     protected int resourcesCollectedTotal = 0;
     protected boolean hasMultipliedThisCycle = false;
 
@@ -115,14 +115,14 @@ public abstract class Agent extends Node {
 
         switch (type) {
             case WOOD:
-                strength += 1;
+                strength += 2;
                 break;
             case SOY:
                 vitality += 1;
                 health = Math.min(health + 20, calculateMaxHealth());
                 break;
             case MATE:
-                speedPoints += 1;
+                speedPoints += 2;
                 AgentControl control = getControl(AgentControl.class);
                 if (control != null) {
                     control.updateEffectiveSpeed();

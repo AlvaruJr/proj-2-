@@ -2,53 +2,35 @@ package netlogoparaguay.agents.Controls.controller;
 
 import java.util.List;
 import netlogoparaguay.agents.Controls.Agent.Agent;
-import netlogoparaguay.agents.Controls.Agent.Jesuit; // Importa a classe Jesuit para ser o alvo
+import netlogoparaguay.agents.Controls.Agent.Guarani;
+import netlogoparaguay.agents.Controls.Agent.Jesuit;
+import netlogoparaguay.resources.Resource;
 
-/**
- * Controle específico para o comportamento dos agentes Guarani.
- * Herda a maior parte da lógica de AgentControl e define que os Jesuítas são seus inimigos.
- */
 public class GuaraniControl extends AgentControl {
 
-    /**
-     * Construtor para GuaraniControl.
-     * Configura os parâmetros específicos para os Guaranis, como velocidade base.
-     * As referências a simulationManager e resourceManager são obtidas
-     * através do método setSpatial da classe AgentControl quando este controle
-     * é anexado a um Agente Guarani.
-     */
     public GuaraniControl() {
-        super(); // Chama o construtor de AgentControl
-        this.baseSpeed = 2.8f;      // Guaranis podem ser um pouco mais rápidos por padrão
-        this.attackRange = 1.6f;    // Alcance de ataque ligeiramente diferente
-        this.attackCooldownBase = 1.8f; // Cooldown de ataque um pouco menor
-        // A effectiveSpeed será calculada em setSpatial -> updateEffectiveSpeed
+        super();
+        this.baseSpeed = 2.8f;
+        this.attackRange = 1.6f;
+        this.attackCooldownBase = 1.8f;
     }
 
-    /**
-     * Encontra o agente Jesuit mais próximo para ser definido como inimigo.
-     * Percorre a lista de Jesuítas ativos fornecida pelo simulationManager.
-     * @return O Agent (Jesuit) inimigo mais próximo dentro do raio de visão, ou null se nenhum for encontrado.
-     */
     @Override
     protected Agent findClosestEnemy() {
         if (simulationManager == null) {
-            // System.err.println("GuaraniControl: simulationManager é nulo, não pode encontrar inimigos.");
             return null;
         }
 
-        List<Jesuit> jesuits = simulationManager.getJesuits(); // Obtém a lista de Jesuítas ativos
+        List<Jesuit> jesuits = simulationManager.getJesuits();
         if (jesuits == null || jesuits.isEmpty()) {
-            return null; // Nenhum Jesuit para atacar
+            return null;
         }
 
         Agent closestEnemy = null;
-        float minDistanceSq = visionRadius * visionRadius; // Usa o raio de visão definido em AgentControl
+        float minDistanceSq = visionRadius * visionRadius;
 
         for (Jesuit jesuit : jesuits) {
-            // Verifica se o jesuit está vivo e é um alvo válido
             if (jesuit != null && !jesuit.isDead()) {
-                // Calcula a distância quadrada para otimização (evita Math.sqrt)
                 float distSq = agent.getLocalTranslation().distanceSquared(jesuit.getLocalTranslation());
                 if (distSq < minDistanceSq) {
                     minDistanceSq = distSq;
@@ -56,21 +38,77 @@ public class GuaraniControl extends AgentControl {
                 }
             }
         }
-
-        // if (closestEnemy != null) {
-        //     System.out.println(agent.getName() + " (Guarani) encontrou inimigo Jesuit: " + closestEnemy.getName());
-        // }
         return closestEnemy;
     }
 
     /**
-     * (Opcional) As subclasses podem sobrescrever 'decideNextState' se tiverem uma lógica
-     * de priorização de estados diferente da padrão em AgentControl.
-     * Para este exemplo, a lógica padrão de AgentControl é suficiente.
+     * MODIFICAÇÃO PRINCIPAL: Lógica de decisão para Guaranis.
+     * Eles agora verificam por aliados antes de decidir entre lutar ou fugir.
      */
-    // @Override
-    // protected void decideNextState() {
-    //     super.decideNextState(); // Chama a lógica base
-    //     // Adicionar aqui qualquer lógica de decisão específica para Guarani, se necessário
-    // }
+    @Override
+    protected void decideNextState() {
+        // 1. Primeiro, encontre o inimigo mais próximo.
+        currentEnemyTarget = findClosestEnemy();
+
+        // 2. Se um inimigo foi encontrado, decida entre lutar ou fugir.
+        if (currentEnemyTarget != null && !currentEnemyTarget.isDead()) {
+
+            // 2a. Conte quantos Guaranis aliados estão por perto.
+            int alliesNearby = 0;
+            if (simulationManager != null) {
+                // Pega a lista de todos os guaranis da simulação
+                List<Guarani> allGuaranis = simulationManager.getGuaranis();
+                for (Guarani otherGuarani : allGuaranis) {
+                    if (otherGuarani == this.agent) {
+                        continue; // Não conte a si mesmo
+                    }
+                    // Se outro guarani estiver dentro do raio de visão, conte como aliado próximo
+                    if (this.agent.getLocalTranslation().distanceSquared(otherGuarani.getLocalTranslation()) < visionRadius * visionRadius) {
+                        alliesNearby++;
+                    }
+                }
+            }
+
+            // 2b. Tome a decisão com base no número de aliados.
+            if (alliesNearby >= 1) {
+                // SE TEM AJUDA: Comporte-se normalmente (atacar ou perseguir)
+                float distanceToEnemy = agent.getLocalTranslation().distance(currentEnemyTarget.getLocalTranslation());
+                if (distanceToEnemy <= attackRange) {
+                    currentState = AgentState.ATTACKING;
+                } else {
+                    currentState = AgentState.SEEKING_ENEMY;
+                }
+            } else {
+                // SE ESTÁ SOZINHO: Fuja!
+                currentState = AgentState.FLEEING;
+            }
+            return; // A decisão foi tomada, não precisa continuar.
+        }
+
+        // 3. Se NENHUM inimigo foi encontrado, volte ao comportamento padrão
+        // (procurar recursos ou vagar). Esta lógica é a mesma da classe base.
+        currentEnemyTarget = null;
+
+        if (resourceManager != null &&
+                (agent.getHealth() < agent.calculateMaxHealth() * 0.8f ||
+                        agent.getVitality() < 5 ||
+                        agent.getStrength() < 3 ||
+                        agent.getSpeedPoints() < 3)) {
+
+            currentResourceTarget = findClosestAvailableResource();
+            if (currentResourceTarget != null && currentResourceTarget.isAvailable()) {
+                float distanceToResource = agent.getLocalTranslation().distance(currentResourceTarget.getPosition());
+                if (distanceToResource <= collectionRange) {
+                    currentState = AgentState.COLLECTING_RESOURCE;
+                } else {
+                    currentState = AgentState.SEEKING_RESOURCE;
+                }
+                return;
+            }
+            currentResourceTarget = null;
+        }
+
+        // Se não há inimigos e não precisa de recursos, fique no estado IDLE (vagando).
+        currentState = AgentState.IDLE;
+    }
 }
